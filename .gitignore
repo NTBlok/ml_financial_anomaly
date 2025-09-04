@@ -1,0 +1,109 @@
+notes/*
+
+# =========================
+# Backend (Python) specific
+# =========================
+backend/__pycache__/
+backend/*.py[cod]
+backend/*$py.class
+backend/.mypy_cache/
+backend/.pytest_cache/
+backend/coverage/
+backend/htmlcov/
+backend/*.egg-info/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.env
+.venv
+env.bak/
+venv.bak/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+*.ipynb
+
+# ML/DL
+.mypy_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+.cover
+.hypothesis/
+
+# LangChain specific
+.chroma/
+.weaviate/
+.pinecone/
+
+# =======================
+# Frontend specific
+# =======================
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnp*
+frontend/.sass-cache
+frontend/.cache/
+frontend/.eslintcache
+frontend/.env
+frontend/.env.local
+frontend/.env.development
+frontend/.env.test
+frontend/.env.production
+frontend/.next
+frontend/out
+frontend/build
+frontend/.DS_Store
+frontend/**/*.log
+
+# =======================
+# General
+# =======================
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs and databases
+*.log
+*.sql
+*.sqlite
+
+# Environment files (handled in specific sections)
+.env
+.env.*
+!.env.example
+
+# Local development
+*.local
+
+# System Files
+.DS_Store
+Thumbs.db
