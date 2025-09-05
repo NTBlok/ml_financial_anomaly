@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  # Backend service (FastAPI)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: financial-anomaly-backend
+    volumes:
+      - ./backend:/app/backend
+    environment:
+      - PYTHONPATH=/app
+      - OLLAMA_BASE_URL=http://llm:11434  # For LLM service communication
+    ports:
+      - "8000:8000"
+    depends_on:
+      - llm
+    restart: unless-stopped
+
+  # Frontend service (React)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: financial-anomaly-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # LLM service (Ollama)
+  llm:
+    image: ollama/ollama:latest
+    container_name: financial-anomaly-llm
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
