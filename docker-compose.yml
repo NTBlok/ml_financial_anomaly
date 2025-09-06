@@ -18,7 +18,7 @@ services:
       - llm
     restart: unless-stopped
 
-  # Frontend service (React)
+  # Frontend service (Vite + React)
   frontend:
     build:
       context: ./frontend
@@ -26,6 +26,8 @@ services:
     container_name: financial-anomaly-frontend
     ports:
       - "3000:80"
+    environment:
+      - VITE_API_URL=http://localhost:8000  # Update this to your backend URL if different
     depends_on:
       - backend
     restart: unless-stopped

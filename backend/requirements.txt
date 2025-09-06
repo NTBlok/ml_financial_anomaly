@@ -1,7 +1,7 @@
 fastapi==0.116.1
 uvicorn==0.35.0
 pandas==2.3.1
-scikit-learn==1.7.1
+scikit-learn==1.2.2  # Last version with Python 3.9 support
 joblib==1.5.1
 requests==2.32.4
 python-dotenv==1.1.1
