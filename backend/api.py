@@ -14,7 +14,7 @@ model = load_model("model.pkl")
 class PredictRequest(BaseModel):
     features: list
 
-@app.train("/infer")
+@app.post("/infer")
 def infer_bitcoin_anomaly():
     df = fetch_timestamp_data(BITCOIN_URL, BITCOIN_REQUEST_PARAMS, BITCOIN_RESPONSE_PARAMS)
     df_clean = clean_data_bitcoin(df)
