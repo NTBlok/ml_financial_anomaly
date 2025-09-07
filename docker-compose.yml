@@ -9,11 +9,17 @@ services:
     container_name: financial-anomaly-backend
     volumes:
       - ./backend:/app/backend
+      - ./backend/notebooks:/app/backend/notebooks
     environment:
       - PYTHONPATH=/app
       - OLLAMA_BASE_URL=http://llm:11434  # For LLM service communication
+      - JUPYTER_TOKEN=dev  # Default password for Jupyter
     ports:
       - "8000:8000"
+      - "8888:8888"  # Jupyter port
+    command: >
+      sh -c "jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token=$$JUPYTER_TOKEN --notebook-dir=/app/backend/notebooks & 
+             uvicorn api:app --host 0.0.0.0 --port 8000"
     depends_on:
       - llm
     restart: unless-stopped
