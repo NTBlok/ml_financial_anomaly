@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 import pandas as pd
-from model_infer import infer_anomaly, load_model
+from model_infer import infer_anomaly, load_anomaly_model as load_model
 from utils.constants import BITCOIN_URL, BITCOIN_REQUEST_PARAMS, BITCOIN_RESPONSE_PARAMS, BITCOIN_MODEL_PARAMS
 from data_fetch import fetch_timestamp_data
 from data_clean import clean_data_bitcoin
