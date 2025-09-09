@@ -1,0 +1,11 @@
+FROM ollama/ollama:latest
+
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Start Ollama, pull model, then serve
+CMD ["/bin/sh", "-c", "\
+    /usr/local/bin/ollama serve & \
+    until curl -s http://localhost:11434/api/tags >/dev/null; do sleep 1; done && \
+    /usr/local/bin/ollama pull mistral && \
+    wait"]
+

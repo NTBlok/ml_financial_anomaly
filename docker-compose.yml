@@ -1,52 +1,108 @@
-version: '3.8'
+version: '3.9'
 
 services:
-  # Backend service (FastAPI)
+  # Backend service (FastAPI API only)
   backend:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: financial-anomaly-backend
+      dockerfile: backend/Dockerfile
+    container_name: backend
     volumes:
       - ./backend:/app/backend
-      - ./backend/notebooks:/app/backend/notebooks
+      - ./backend/models:/app/backend/models
     environment:
       - PYTHONPATH=/app
-      - OLLAMA_BASE_URL=http://llm:11434  # For LLM service communication
-      - JUPYTER_TOKEN=dev  # Default password for Jupyter
+      - OLLAMA_BASE_URL=http://llm:11434
+      - DATABASE_URL=postgresql://user:password@db:5432/anomalies  # optional
     ports:
       - "8000:8000"
-      - "8888:8888"  # Jupyter port
-    command: >
-      sh -c "jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token=$$JUPYTER_TOKEN --notebook-dir=/app/backend/notebooks & 
-             uvicorn api:app --host 0.0.0.0 --port 8000"
+    command: uvicorn api:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
-      - llm
+      llm:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Jupyter service (separate from backend)
+  jupyter:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dev
+    container_name: jupyter
+    working_dir: /app/backend
+    command: >
+      sh -c "jupyter notebook --ip=0.0.0.0 --port=8888
+      --no-browser --allow-root
+      --NotebookApp.token=dev
+      --notebook-dir=./notebooks"
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./backend:/app/backend
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      - backend
     restart: unless-stopped
 
-  # Frontend service (Vite + React)
+  # Frontend service (React + Nginx)
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: financial-anomaly-frontend
+    container_name: frontend
     ports:
       - "3000:80"
     environment:
-      - VITE_API_URL=http://localhost:8000  # Update this to your backend URL if different
+      - VITE_API_URL=http://backend:8000
     depends_on:
       - backend
     restart: unless-stopped
 
   # LLM service (Ollama)
   llm:
-    image: ollama/ollama:latest
-    container_name: financial-anomaly-llm
+    build:
+      context: .
+      dockerfile: Dockerfile.ollama
+    container_name: llm
     ports:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
+
+  # Optional Postgres for anomaly storage
+  db:
+    image: postgres:15
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: anomalies
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql 
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d anomalies"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
 volumes:
   ollama_data:
+  postgres_data:
