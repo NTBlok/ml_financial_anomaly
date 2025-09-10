@@ -1,11 +1,21 @@
-FROM ollama/ollama:latest
+FROM ubuntu:22.04
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Start Ollama, pull model, then serve
-CMD ["/bin/sh", "-c", "\
-    /usr/local/bin/ollama serve & \
-    until curl -s http://localhost:11434/api/tags >/dev/null; do sleep 1; done && \
-    /usr/local/bin/ollama pull mistral && \
-    wait"]
+# Install Ollama
+RUN curl -fsSL https://ollama.com/install.sh | sh
 
+# Create a simple startup script
+RUN echo '#!/bin/bash\n\n# Start Ollama server\necho "Starting Ollama server..."\n/usr/local/bin/ollama serve &
+
+# Wait for server to be ready\necho "Waiting for Ollama to start..."\nsleep 5\n
+# Check if server is running\nif ! curl -s http://localhost:11434/api/tags >/dev/null; then\n  echo "Failed to start Ollama server"\n  exit 1\nfi\n\necho "Ollama server started successfully"\n\n# Pull the model\necho "Pulling Mistral model..."\n/usr/local/bin/ollama pull mistral\n\necho "Mistral model pulled successfully"\n\n# Keep container running\ntail -f /dev/null' > /start.sh && chmod +x /start.sh
+
+# Set the entrypoint
+ENTRYPOINT ["/bin/bash", "/start.sh"]
+
+# Expose the Ollama API port
+EXPOSE 11434
