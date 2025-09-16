@@ -15,16 +15,21 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { fetchAnomalyData, fetchMetrics } from './api/financialApi';
+import CircularProgress from '@mui/material/CircularProgress';
+import Alert from '@mui/material/Alert';
 
-// Sample data - replace with real data from your API
-const sampleData = [
-  { date: '2023-01', value: 4000 },
-  { date: '2023-02', value: 3000 },
-  { date: '2023-03', value: 5000 },
-  { date: '2023-04', value: 2780 },
-  { date: '2023-05', value: 1890 },
-  { date: '2023-06', value: 2390 },
-];
+// Default empty data structure
+const defaultMetrics = {
+  totalTransactions: 0,
+  anomaliesDetected: 0,
+  modelAccuracy: 0,
+};
+
+const defaultAnomalyData = {
+  anomaly: [],
+  normal: []
+};
 
 const theme = createTheme({
   palette: {
@@ -69,29 +74,64 @@ function TabPanel(props) {
 function App() {
   const [value, setValue] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [chartData, setChartData] = useState(sampleData);
+  const [error, setError] = useState(null);
+  const [metrics, setMetrics] = useState(defaultMetrics);
+  const [anomalyData, setAnomalyData] = useState(defaultAnomalyData);
 
   const handleChange = (event, newValue) => {
     setValue(newValue);
   };
 
   useEffect(() => {
-    // Fetch data from your backend API
     const fetchData = async () => {
       try {
-        // Replace with actual API call
-        // const response = await fetch('http://localhost:8000/api/data');
-        // const data = await response.json();
-        // setChartData(data);
-        setIsLoading(false);
-      } catch (error) {
-        console.error('Error fetching data:', error);
+        setIsLoading(true);
+        setError(null);
+        
+        // Fetch metrics and anomaly data in parallel
+        const [metricsData, anomalyResponse] = await Promise.all([
+          fetchMetrics(),
+          fetchAnomalyData()
+        ]);
+
+        // Process anomaly data
+        const processedAnomalyData = {};
+        anomalyResponse.forEach(item => {
+          processedAnomalyData[item.series] = item.data.map(d => ({
+            date: new Date(d.timestamp).toLocaleDateString(),
+            value: d.price,
+            ...d
+          }));
+        });
+
+        setMetrics(metricsData);
+        setAnomalyData(processedAnomalyData);
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        setError('Failed to load data. Please try again later.');
+      } finally {
         setIsLoading(false);
       }
     };
 
     fetchData();
   }, []);
+
+  const formatNumber = (num) => {
+    return new Intl.NumberFormat('en-US').format(num);
+  };
+
+  const renderLoading = () => (
+    <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
+      <CircularProgress />
+    </Box>
+  );
+
+  const renderError = () => (
+    <Box my={2}>
+      <Alert severity="error">{error}</Alert>
+    </Box>
+  );
 
   return (
     <ThemeProvider theme={theme}>
@@ -111,22 +151,42 @@ function App() {
             <Grid item xs={12} md={4}>
               <Item>
                 <Typography variant="h6" gutterBottom>Total Transactions</Typography>
-                <Typography variant="h4">1,234</Typography>
-                <Typography color="text.secondary">+12% from last month</Typography>
+                {isLoading ? (
+                  <CircularProgress size={40} />
+                ) : (
+                  <>
+                    <Typography variant="h4">{formatNumber(metrics.totalTransactions)}</Typography>
+                    <Typography color="text.secondary">Tracked transactions</Typography>
+                  </>
+                )}
               </Item>
             </Grid>
             <Grid item xs={12} md={4}>
               <Item>
                 <Typography variant="h6" gutterBottom>Anomalies Detected</Typography>
-                <Typography variant="h4" color="error">24</Typography>
-                <Typography color="text.secondary">+2 from last week</Typography>
+                {isLoading ? (
+                  <CircularProgress size={40} />
+                ) : (
+                  <>
+                    <Typography variant="h4" color="error">
+                      {formatNumber(metrics.anomaliesDetected)}
+                    </Typography>
+                    <Typography color="text.secondary">Potential issues found</Typography>
+                  </>
+                )}
               </Item>
             </Grid>
             <Grid item xs={12} md={4}>
               <Item>
-                <Typography variant="h6" gutterBottom>Accuracy</Typography>
-                <Typography variant="h4">98.5%</Typography>
-                <Typography color="text.secondary">Model performance</Typography>
+                <Typography variant="h6" gutterBottom>Model Accuracy</Typography>
+                {isLoading ? (
+                  <CircularProgress size={40} />
+                ) : (
+                  <>
+                    <Typography variant="h4">{metrics.modelAccuracy}%</Typography>
+                    <Typography color="text.secondary">Performance metric</Typography>
+                  </>
+                )}
               </Item>
             </Grid>
 
@@ -141,17 +201,49 @@ function App() {
                 
                 <TabPanel value={value} index={0}>
                   <Typography variant="h6" gutterBottom>Transaction Overview</Typography>
+                  {error && renderError()}
                   <div style={{ height: '400px' }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={chartData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="date" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        <Line type="monotone" dataKey="value" stroke="#1976d2" name="Transaction Value" />
-                      </LineChart>
-                    </ResponsiveContainer>
+                    {isLoading ? (
+                      renderLoading()
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart
+                          data={[...anomalyData.normal, ...anomalyData.anomaly].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))}
+                          margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis 
+                            dataKey="date" 
+                            tickFormatter={(date) => new Date(date).toLocaleDateString()}
+                          />
+                          <YAxis />
+                          <Tooltip 
+                            labelFormatter={(date) => `Date: ${new Date(date).toLocaleString()}`}
+                            formatter={(value, name, props) => [value, name]}
+                          />
+                          <Legend />
+                          <Line 
+                            type="monotone" 
+                            dataKey="price" 
+                            name="Price" 
+                            stroke="#1976d2" 
+                            dot={false}
+                            activeDot={{ r: 6 }}
+                          />
+                          {anomalyData.anomaly.length > 0 && (
+                            <Line 
+                              type="scatter" 
+                              data={anomalyData.anomaly}
+                              dataKey="price"
+                              name="Anomaly"
+                              stroke="#ff4081"
+                              fill="#ff4081"
+                              strokeWidth={2}
+                            />
+                          )}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
                   </div>
                 </TabPanel>
                 
