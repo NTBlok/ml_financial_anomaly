@@ -59,10 +59,16 @@ def get_anomaly_data() -> Dict[str, Any]:
     # Perform inference
     infer_df = infer_anomaly(BITCOIN_MODEL_PARAMS['save_path'], X_infer, infer_df)
     
-    # Cache the results
+    # Reset index to include timestamp as a column
+    infer_df = infer_df.reset_index()
+    
+    # Cache the results - the timestamp is now a regular column
+    anomaly_records = infer_df[infer_df['anomaly'] == 1].to_dict(orient="records")
+    normal_records = infer_df[infer_df['anomaly'] == 0].to_dict(orient="records")
+    
     result = {
-        "anomaly": infer_df[infer_df['anomaly'] == 1].to_dict(orient="records"),
-        "normal": infer_df[infer_df['anomaly'] == 0].to_dict(orient="records")
+        "anomaly": anomaly_records,
+        "normal": normal_records
     }
     model_cache['anomaly_data'] = result
     
