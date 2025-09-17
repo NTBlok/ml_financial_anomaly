@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { ThemeProvider, createTheme, Switch, FormControlLabel } from '@mui/material';
 import CssBaseline from '@mui/material/CssBaseline';
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -15,9 +15,19 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { fetchAnomalyData, fetchMetrics } from './api/financialApi';
+import { 
+  fetchAnomalyData, 
+  fetchMetrics, 
+  fetchAnomalyExplanation, 
+  checkLLMAvailability 
+} from './api/financialApi';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import Button from '@mui/material/Button';
 
 // Default empty data structure
 const defaultMetrics = {
@@ -77,10 +87,26 @@ function App() {
   const [error, setError] = useState(null);
   const [metrics, setMetrics] = useState(defaultMetrics);
   const [anomalyData, setAnomalyData] = useState(defaultAnomalyData);
+  const [useLLM, setUseLLM] = useState(false);
+  const [llmAvailable, setLlmAvailable] = useState(false);
+  const [selectedAnomaly, setSelectedAnomaly] = useState(null);
+  const [explanation, setExplanation] = useState(null);
+  const [explanationLoading, setExplanationLoading] = useState(false);
 
-  const handleChange = (event, newValue) => {
-    setValue(newValue);
-  };
+  useEffect(() => {
+    const checkLLM = async () => {
+      try {
+        const isAvailable = await checkLLMAvailability();
+        setLlmAvailable(isAvailable);
+        setUseLLM(isAvailable); // Enable LLM by default if available
+      } catch (err) {
+        console.error('Error checking LLM availability:', err);
+        setLlmAvailable(false);
+      }
+    };
+    
+    checkLLM();
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -90,8 +116,8 @@ function App() {
         
         // Fetch metrics and anomaly data in parallel
         const [metricsData, anomalyResponse] = await Promise.all([
-          fetchMetrics(),
-          fetchAnomalyData()
+          fetchMetrics(useLLM ? 'llm' : 'baseline'),
+          fetchAnomalyData({ preferLLM: useLLM })
         ]);
 
         // Process anomaly data
@@ -115,7 +141,34 @@ function App() {
     };
 
     fetchData();
-  }, []);
+  }, [useLLM]);
+
+  const handleChange = (event, newValue) => {
+    setValue(newValue);
+  };
+
+  const handleAnomalyClick = async (anomaly) => {
+    if (!llmAvailable) return;
+    
+    setSelectedAnomaly(anomaly);
+    setExplanation(null);
+    setExplanationLoading(true);
+    
+    try {
+      const explanation = await fetchAnomalyExplanation(anomaly.id || anomaly.timestamp);
+      setExplanation(explanation);
+    } catch (err) {
+      console.error('Error fetching explanation:', err);
+      setError('Failed to load explanation. Please try again.');
+    } finally {
+      setExplanationLoading(false);
+    }
+  };
+
+  const handleCloseDialog = () => {
+    setSelectedAnomaly(null);
+    setExplanation(null);
+  };
 
   const formatNumber = (num) => {
     return new Intl.NumberFormat('en-US').format(num);
@@ -140,8 +193,22 @@ function App() {
         <AppBar position="static">
           <Toolbar>
             <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-              Financial Anomaly Detection
+              Financial Anomaly Detection {llmAvailable && '(LLM Enhanced)'}
             </Typography>
+            {llmAvailable && (
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={useLLM}
+                    onChange={(e) => setUseLLM(e.target.checked)}
+                    color="secondary"
+                  />
+                }
+                label="Use LLM"
+                labelPlacement="start"
+                sx={{ color: 'white' }}
+              />
+            )}
           </Toolbar>
         </AppBar>
 
@@ -239,6 +306,15 @@ function App() {
                               stroke="#ff4081"
                               fill="#ff4081"
                               strokeWidth={2}
+                              activeDot={{
+                                r: 8,
+                                onClick: (event, payload) => {
+                                  if (llmAvailable) {
+                                    handleAnomalyClick(payload.payload);
+                                  }
+                                },
+                                style: { cursor: llmAvailable ? 'pointer' : 'default' }
+                              }}
                             />
                           )}
                         </LineChart>
@@ -260,6 +336,54 @@ function App() {
             </Grid>
           </Grid>
         </Container>
+        
+        {error && (
+          <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
+        {llmAvailable && !useLLM && (
+          <Alert severity="info" sx={{ mb: 3 }}>
+            LLM-augmented detection is available. Enable it for more accurate anomaly detection.
+          </Alert>
+        )}
+        
+        {/* Anomaly Explanation Dialog */}
+        <Dialog 
+          open={!!selectedAnomaly} 
+          onClose={handleCloseDialog}
+          maxWidth="md"
+          fullWidth
+        >
+          <DialogTitle>
+            Anomaly Details
+            {selectedAnomaly && (
+              <Typography variant="subtitle2" color="text.secondary">
+                {new Date(selectedAnomaly.timestamp).toLocaleString()}
+              </Typography>
+            )}
+          </DialogTitle>
+          <DialogContent>
+            {explanationLoading ? (
+              <Box display="flex" justifyContent="center" p={4}>
+                <CircularProgress />
+              </Box>
+            ) : explanation ? (
+              <Box>
+                <Typography variant="h6" gutterBottom>Explanation:</Typography>
+                <Typography paragraph>{explanation.explanation || 'No explanation available'}</Typography>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Model: {anomalyData.model_type || 'baseline'}
+                </Typography>
+              </Box>
+            ) : (
+              <Typography>No additional information available for this anomaly.</Typography>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseDialog}>Close</Button>
+          </DialogActions>
+        </Dialog>
       </Box>
     </ThemeProvider>
   );
