@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8000'; // Update this if your backend runs on a different port
+const API_BASE_URL = '/api'; // This will be proxied to the backend by nginx
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -21,12 +21,8 @@ export const fetchAnomalyData = async () => {
 
 export const fetchMetrics = async () => {
   try {
-    // This is a placeholder. Update with actual metrics endpoint when available
-    return {
-      totalTransactions: 1234,
-      anomaliesDetected: 24,
-      modelAccuracy: 98.5,
-    };
+    const response = await api.get('/metrics');
+    return response.data;
   } catch (error) {
     console.error('Error fetching metrics:', error);
     throw error;

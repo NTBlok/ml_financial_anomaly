@@ -1,17 +1,34 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Dict, Any
+from typing import List, Dict, Any, Optional
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from model_infer import infer_anomaly, load_anomaly_model as load_model
-from utils.constants import BITCOIN_URL, BITCOIN_REQUEST_PARAMS, BITCOIN_RESPONSE_PARAMS, BITCOIN_MODEL_PARAMS
+import os
+import pickle
+import time
+import json
+from functools import lru_cache
 from data_fetch import fetch_timestamp_data
 from data_clean import clean_data_bitcoin
-from model_preprocess import preprocess_data
 from model_train import train_anomaly_model
+from model_infer import infer_anomaly, load_anomaly_model as load_model
+from model_preprocess import preprocess_data
+from utils.constants import BITCOIN_URL, BITCOIN_REQUEST_PARAMS, BITCOIN_RESPONSE_PARAMS, BITCOIN_MODEL_PARAMS
 
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 model = load_model("model.pkl")
 
 class PredictRequest(BaseModel):
