@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = '/api'; // This will be proxied to the backend by nginx
+const API_BASE_URL = ''; // Use relative URLs since we're already behind nginx proxy
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -51,7 +51,14 @@ const fetchAnomalyDataByMode = async (mode = 'baseline') => {
         data = { use_llm: false };
     }
     
-    const response = await api.post(endpoint, Object.keys(data).length ? data : undefined);
+    const response = await api({
+      method: 'POST',
+      url: endpoint,
+      data: Object.keys(data).length ? data : {},
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
     return response.data;
   } catch (error) {
     console.error(`Error fetching ${mode} anomaly data:`, error);

@@ -120,15 +120,27 @@ function App() {
           fetchAnomalyData({ preferLLM: useLLM })
         ]);
 
-        // Process anomaly data
-        const processedAnomalyData = {};
-        anomalyResponse.forEach(item => {
-          processedAnomalyData[item.series] = item.data.map(d => ({
-            date: new Date(d.timestamp).toLocaleDateString(),
-            value: d.price,
-            ...d
-          }));
-        });
+        // Process anomaly data - the backend returns an array of data points with an 'anomaly' flag
+        const processedAnomalyData = {
+          normal: Array.isArray(anomalyResponse) 
+            ? anomalyResponse
+                .filter(d => d.anomaly === 0)
+                .map(d => ({
+                  ...d,
+                  date: new Date(d.timestamp).toLocaleDateString(),
+                  value: d.price
+                }))
+            : [],
+          anomaly: Array.isArray(anomalyResponse)
+            ? anomalyResponse
+                .filter(d => d.anomaly === 1)
+                .map(d => ({
+                  ...d,
+                  date: new Date(d.timestamp).toLocaleDateString(),
+                  value: d.price
+                }))
+            : []
+        };
 
         setMetrics(metricsData);
         setAnomalyData(processedAnomalyData);
@@ -275,48 +287,48 @@ function App() {
                     ) : (
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart
-                          data={[...anomalyData.normal, ...anomalyData.anomaly].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))}
                           margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                         >
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis 
-                            dataKey="date" 
-                            tickFormatter={(date) => new Date(date).toLocaleDateString()}
+                            dataKey="timestamp"
+                            tickFormatter={(timestamp) => new Date(timestamp).toLocaleDateString()}
                           />
                           <YAxis />
                           <Tooltip 
-                            labelFormatter={(date) => `Date: ${new Date(date).toLocaleString()}`}
+                            labelFormatter={(timestamp) => `Date: ${new Date(timestamp).toLocaleString()}`}
                             formatter={(value, name, props) => [value, name]}
                           />
                           <Legend />
+                          {/* Normal data line */}
                           <Line 
                             type="monotone" 
+                            data={anomalyData.normal}
                             dataKey="price" 
                             name="Price" 
                             stroke="#1976d2" 
                             dot={false}
                             activeDot={{ r: 6 }}
                           />
-                          {anomalyData.anomaly.length > 0 && (
-                            <Line 
-                              type="scatter" 
-                              data={anomalyData.anomaly}
-                              dataKey="price"
-                              name="Anomaly"
-                              stroke="#ff4081"
-                              fill="#ff4081"
-                              strokeWidth={2}
-                              activeDot={{
-                                r: 8,
-                                onClick: (event, payload) => {
-                                  if (llmAvailable) {
-                                    handleAnomalyClick(payload.payload);
-                                  }
-                                },
-                                style: { cursor: llmAvailable ? 'pointer' : 'default' }
-                              }}
-                            />
-                          )}
+                          {/* Anomaly points */}
+                          <Line 
+                            type="scatter" 
+                            data={anomalyData.anomaly}
+                            dataKey="price"
+                            name="Anomaly"
+                            stroke="#ff4081"
+                            fill="#ff4081"
+                            strokeWidth={2}
+                            activeDot={{
+                              r: 8,
+                              onClick: (event, payload) => {
+                                if (llmAvailable) {
+                                  handleAnomalyClick(payload.payload);
+                                }
+                              },
+                              style: { cursor: llmAvailable ? 'pointer' : 'default' }
+                            }}
+                          />
                         </LineChart>
                       </ResponsiveContainer>
                     )}
