@@ -26,6 +26,27 @@ class AnomalyExplainer:
             temperature=temperature,
             base_url=self.base_url
         )
+        
+        self.prompt_template = """
+        You are a financial analyst specializing in cryptocurrency markets. 
+        Analyze the following price anomaly and provide a concise explanation.
+        
+        Timestamp: {timestamp}
+        Price: ${price:,.2f}
+        Percentage Change: {pct_change:.2%}
+        
+        Recent Price Movement:
+        {recent_prices}
+        
+        Provide a brief explanation of what might have caused this anomaly.
+        Consider factors like:
+        - Market news or events
+        - Technical patterns
+        - Volume changes
+        - Market sentiment
+        
+        Explanation:
+        """
     
     def ensure_model_available(self, max_retries: int = 3, retry_delay: int = 5):
         """Ensure the specified model is available, pulling it if necessary."""
@@ -52,26 +73,6 @@ class AnomalyExplainer:
                     raise RuntimeError(f"Failed to ensure model {self.model_name} is available: {e}")
                 print(f"Attempt {attempt + 1} failed, retrying in {retry_delay} seconds...")
                 time.sleep(retry_delay)
-        self.prompt_template = """
-        You are a financial analyst specializing in cryptocurrency markets. 
-        Analyze the following price anomaly and provide a concise explanation.
-        
-        Timestamp: {timestamp}
-        Price: ${price:,.2f}
-        Percentage Change: {pct_change:.2%}
-        
-        Recent Price Movement:
-        {recent_prices}
-        
-        Provide a brief explanation of what might have caused this anomaly.
-        Consider factors like:
-        - Market news or events
-        - Technical patterns
-        - Volume changes
-        - Market sentiment
-        
-        Explanation:
-        """
     
     def get_recent_price_context(self, df: pd.DataFrame, idx: int, window: int = 5) -> str:
         """Get context of recent prices before the anomaly."""
@@ -91,18 +92,16 @@ class AnomalyExplainer:
         row = df.iloc[idx]
         recent_prices = self.get_recent_price_context(df, idx)
         
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful financial analyst."),
-            ("human", self.prompt_template.format(
-                timestamp=row.name,
-                price=row['price'],
-                pct_change=row.get('pct_change', 0),
-                recent_prices=recent_prices
-            ))
-        ])
+        # Format the prompt directly as a string
+        prompt_text = self.prompt_template.format(
+            timestamp=row.name,
+            price=row['price'],
+            pct_change=row.get('pct_change', 0),
+            recent_prices=recent_prices
+        )
         
-        chain = prompt | self.llm | StrOutputParser()
-        explanation = chain.invoke({})
+        # Get the explanation from the LLM
+        explanation = self.llm(prompt_text)
         
         return {
             "timestamp": str(row.name),
