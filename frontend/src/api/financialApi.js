@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = ''; // Use relative URLs since we're already behind nginx proxy
+const API_BASE_URL = '/api'; // Prefix all API requests with /api to match nginx proxy
 
 const api = axios.create({
   baseURL: API_BASE_URL,
