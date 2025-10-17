@@ -1,6 +1,6 @@
 # Financial Anomaly Detection System
 
-A comprehensive system for detecting anomalies in financial data using machine learning and LLM-powered analysis.
+A comprehensive system for detecting anomalies in financial data using machine learning and LLM-powered advanced analysis.
 
 ## 🚀 Features
 
