@@ -14,13 +14,14 @@ import Tab from '@mui/material/Tab';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import SettingsIcon from '@mui/icons-material/Settings';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Scatter, LabelList } from 'recharts';
 import { 
   fetchAnomalyData, 
   fetchMetrics, 
   fetchAnomalyExplanation, 
   checkLLMAvailability 
 } from './api/financialApi';
+import AnalyticsPanel from './components/AnalyticsPanel';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
 import Dialog from '@mui/material/Dialog';
@@ -45,7 +46,7 @@ const theme = createTheme({
   palette: {
     mode: 'light',
     primary: {
-      main: '#1976d2',
+      main: '#017310',
     },
     secondary: {
       main: '#dc004e',
@@ -86,12 +87,15 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [metrics, setMetrics] = useState(defaultMetrics);
-  const [anomalyData, setAnomalyData] = useState(defaultAnomalyData);
-  const [useLLM, setUseLLM] = useState(false);
+  const [anomalyData, setAnomalyData] = useState({ normal: [], anomaly: [] });
+  const [loading, setLoading] = useState(true);
   const [llmAvailable, setLlmAvailable] = useState(false);
   const [selectedAnomaly, setSelectedAnomaly] = useState(null);
-  const [explanation, setExplanation] = useState(null);
+  const [explanation, setExplanation] = useState('');
   const [explanationLoading, setExplanationLoading] = useState(false);
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
+
+  const [useLLM, setUseLLM] = useState(false);
 
   useEffect(() => {
     const checkLLM = async () => {
@@ -102,6 +106,7 @@ function App() {
       } catch (err) {
         console.error('Error checking LLM availability:', err);
         setLlmAvailable(false);
+        setUseLLM(false);
       }
     };
     
@@ -114,32 +119,80 @@ function App() {
         setIsLoading(true);
         setError(null);
         
-        // Fetch metrics and anomaly data in parallel
+        console.log('Starting data fetch...');
+        
+        // Fetch metrics and anomaly data in parallel with error handling for each
         const [metricsData, anomalyResponse] = await Promise.all([
-          fetchMetrics(useLLM ? 'llm' : 'baseline'),
-          fetchAnomalyData({ preferLLM: useLLM })
+          fetchMetrics(useLLM ? 'llm' : 'baseline').catch(err => {
+            console.error('Error fetching metrics:', err);
+            return { success: false, error: 'Failed to load metrics' };
+          }),
+          fetchAnomalyData({ preferLLM: useLLM }).catch(err => {
+            console.error('Error fetching anomaly data:', err);
+            return { success: false, error: 'Failed to load anomaly data' };
+          })
         ]);
+        
+        console.log('Metrics data:', metricsData);
+        console.log('Anomaly response:', anomalyResponse);
 
-        // Process anomaly data - the backend returns an array of data points with an 'anomaly' flag
+        // Debug: Log the raw response
+        console.log('Raw anomaly response:', anomalyResponse);
+        
+        // Handle error cases
+        if (!anomalyResponse || !anomalyResponse.success) {
+          const errorMsg = anomalyResponse?.error || 'Failed to load anomaly data';
+          console.error('Error in response:', errorMsg);
+          setError(errorMsg);
+          setAnomalyData({ normal: [], anomaly: [] });
+          return;
+        }
+        
+        // Process anomaly data - handle both array and object responses
+        let anomalyData = [];
+        if (Array.isArray(anomalyResponse.data)) {
+          anomalyData = anomalyResponse.data;
+        } else if (anomalyResponse.data && Array.isArray(anomalyResponse.data.data)) {
+          anomalyData = anomalyResponse.data.data;
+        }
+        
+        console.log('Processed anomaly data array:', anomalyData);
+        
+        // Ensure we have valid data
+        if (!anomalyData || anomalyData.length === 0) {
+          console.warn('No anomaly data received from the server');
+          setError('No data available. The server returned an empty dataset.');
+          setAnomalyData({ normal: [], anomaly: [] });
+          return;
+        }
+        
         const processedAnomalyData = {
-          normal: Array.isArray(anomalyResponse) 
-            ? anomalyResponse
-                .filter(d => d.anomaly === 0)
-                .map(d => ({
-                  ...d,
-                  date: new Date(d.timestamp).toLocaleDateString(),
-                  value: d.price
-                }))
-            : [],
-          anomaly: Array.isArray(anomalyResponse)
-            ? anomalyResponse
-                .filter(d => d.anomaly === 1)
-                .map(d => ({
-                  ...d,
-                  date: new Date(d.timestamp).toLocaleDateString(),
-                  value: d.price
-                }))
-            : []
+          normal: anomalyData
+            .filter(d => d.anomaly === 0)
+            .map(d => {
+              const processed = {
+                ...d,
+                // Make sure we have a timestamp field for the graph
+                timestamp: d.timestamp || d.date || new Date().toISOString(),
+                date: new Date(d.timestamp || d.date).toLocaleDateString(),
+                value: d.price || d.value || 0  // Fallback to 0 if price is missing
+              };
+              console.log('Normal point:', processed);
+              return processed;
+            }),
+          anomaly: anomalyData
+            .filter(d => d.anomaly === 1)
+            .map(d => {
+              const processed = {
+                ...d,
+                // Make sure we have a timestamp field for the graph
+                timestamp: d.timestamp || d.date || new Date().toISOString(),
+                date: new Date(d.timestamp || d.date).toLocaleDateString(),
+                value: d.price || d.value || 0  // Fallback to 0 if price is missing
+              };
+              console.log('Anomaly point:', processed);
+              return processed;
+            })
         };
 
         setMetrics(metricsData);
@@ -282,59 +335,61 @@ function App() {
                   <Typography variant="h6" gutterBottom>Transaction Overview</Typography>
                   {error && renderError()}
                   <div style={{ height: '400px' }}>
-                    {isLoading ? (
-                      renderLoading()
-                    ) : (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart
-                          margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart
+                        data={[...anomalyData.normal, ...anomalyData.anomaly]}
+                        margin={{
+                          top: 5,
+                          right: 30,
+                          left: 20,
+                          bottom: 5,
+                        }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis 
+                          dataKey="timestamp" 
+                          tickFormatter={(timestamp) => new Date(timestamp).toLocaleDateString()}
+                        />
+                        <YAxis />
+                        <Tooltip 
+                          labelFormatter={(timestamp) => `Date: ${new Date(timestamp).toLocaleString()}`}
+                          formatter={(value, name, props) => [value, name]}
+                        />
+                        <Legend />
+                        {/* Normal data line */}
+                        <Line 
+                          type="monotone" 
+                          dataKey="value" 
+                          name="Price" 
+                          stroke="#1976d2" 
+                          dot={false}
+                          activeDot={{ 
+                            r: 8,
+                            onClick: (event, payload) => {
+                              if (llmAvailable) {
+                                handleAnomalyClick(payload.payload);
+                              }
+                            },
+                            style: { cursor: llmAvailable ? 'pointer' : 'default' }
+                          }}
+                        />
+                        {/* Anomaly points */}
+                        <Scatter 
+                          data={anomalyData.anomaly}
+                          name="Anomaly"
+                          fill="#ff4081"
+                          lineType="none"
                         >
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis 
-                            dataKey="timestamp"
-                            tickFormatter={(timestamp) => new Date(timestamp).toLocaleDateString()}
+                          <LabelList 
+                            dataKey="value" 
+                            position="top" 
+                            formatter={(value) => value.toFixed(2)}
                           />
-                          <YAxis />
-                          <Tooltip 
-                            labelFormatter={(timestamp) => `Date: ${new Date(timestamp).toLocaleString()}`}
-                            formatter={(value, name, props) => [value, name]}
-                          />
-                          <Legend />
-                          {/* Normal data line */}
-                          <Line 
-                            type="monotone" 
-                            data={anomalyData.normal}
-                            dataKey="price" 
-                            name="Price" 
-                            stroke="#1976d2" 
-                            dot={false}
-                            activeDot={{ r: 6 }}
-                          />
-                          {/* Anomaly points */}
-                          <Line 
-                            type="scatter" 
-                            data={anomalyData.anomaly}
-                            dataKey="price"
-                            name="Anomaly"
-                            stroke="#ff4081"
-                            fill="#ff4081"
-                            strokeWidth={2}
-                            activeDot={{
-                              r: 8,
-                              onClick: (event, payload) => {
-                                if (llmAvailable) {
-                                  handleAnomalyClick(payload.payload);
-                                }
-                              },
-                              style: { cursor: llmAvailable ? 'pointer' : 'default' }
-                            }}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    )}
+                        </Scatter>
+                      </LineChart>
+                    </ResponsiveContainer>
                   </div>
                 </TabPanel>
-                
                 <TabPanel value={value} index={1}>
                   <Typography variant="h6" gutterBottom>Detailed Analytics</Typography>
                   <Typography>Advanced analytics coming soon...</Typography>
@@ -381,19 +436,47 @@ function App() {
                 <CircularProgress />
               </Box>
             ) : explanation ? (
-              <Box>
-                <Typography variant="h6" gutterBottom>Explanation:</Typography>
-                <Typography paragraph>{explanation.explanation || 'No explanation available'}</Typography>
-                <Typography variant="subtitle2" color="text.secondary">
-                  Model: {anomalyData.model_type || 'baseline'}
+              <Box mb={2}>
+                <Typography variant="h6" gutterBottom>Analysis:</Typography>
+                <Typography variant="body1" paragraph>
+                  {explanation.explanation || 'No explanation available'}
                 </Typography>
+                <Box mt={2}>
+                  <Button 
+                    variant="contained" 
+                    color="primary"
+                    onClick={() => setAnalyticsOpen(true)}
+                    startIcon={<AnalyticsIcon />}
+                  >
+                    Advanced Analysis
+                  </Button>
+                </Box>
               </Box>
             ) : (
-              <Typography>No additional information available for this anomaly.</Typography>
+              <Typography>No explanation available for this anomaly.</Typography>
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={handleCloseDialog}>Close</Button>
+            <Button onClick={() => setSelectedAnomaly(null)}>Close</Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Analytics Panel Dialog */}
+        <Dialog 
+          open={analyticsOpen} 
+          onClose={() => setAnalyticsOpen(false)}
+          maxWidth="lg"
+          fullWidth
+        >
+          <DialogTitle>Advanced Analytics with Mistral</DialogTitle>
+          <DialogContent>
+            <AnalyticsPanel 
+              anomalyData={selectedAnomaly} 
+              onClose={() => setAnalyticsOpen(false)}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setAnalyticsOpen(false)}>Close</Button>
           </DialogActions>
         </Dialog>
       </Box>

@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = '/api'; // Prefix all API requests with /api to match nginx proxy
+const API_BASE_URL = 'http://localhost:8001'; // Directly point to the backend server
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -36,33 +36,73 @@ export const checkLLMAvailability = async () => {
  * @returns {Promise<Object>} Anomaly detection results
  */
 const fetchAnomalyDataByMode = async (mode = 'baseline') => {
+  const endpoint = '/detect-anomalies';
+  console.log(`Fetching data from ${endpoint} in ${mode} mode`);
+  
   try {
-    let endpoint = '/infer';
-    let data = {};
-    
-    switch (mode) {
-      case 'llm':
-        endpoint = '/infer/llm';
-        break;
-      case 'legacy':
-        endpoint = '/infer/legacy';
-        break;
-      default:
-        data = { use_llm: false };
-    }
-    
-    const response = await api({
-      method: 'POST',
-      url: endpoint,
-      data: Object.keys(data).length ? data : {},
-      headers: {
-        'Content-Type': 'application/json'
+    const response = await api.get(endpoint, {
+      // Add a timeout to prevent hanging requests
+      timeout: 30000, // 30 seconds
+      // Add request metadata for debugging
+      metadata: {
+        mode,
+        timestamp: new Date().toISOString()
       }
     });
-    return response.data;
+    
+    console.log(`API response received for ${mode} mode:`, {
+      status: response.status,
+      statusText: response.statusText,
+      data: response.data ? 'data received' : 'no data',
+      headers: response.headers
+    });
+    
+    // Make sure we have a valid response with data
+    if (!response.data) {
+      const error = new Error('No data in response');
+      error.response = response;
+      throw error;
+    }
+    
+    // Handle different response formats
+    if (Array.isArray(response.data)) {
+      return response.data;
+    } else if (response.data && Array.isArray(response.data.data)) {
+      return response.data.data;
+    } else if (response.data.data && typeof response.data.data === 'object') {
+      // If data is an object, convert it to an array
+      return Object.values(response.data.data);
+    }
+    
+    throw new Error(`Unexpected response format: ${JSON.stringify(response.data).substring(0, 200)}...`);
+    
   } catch (error) {
-    console.error(`Error fetching ${mode} anomaly data:`, error);
-    throw error;
+    const errorInfo = {
+      message: error.message,
+      code: error.code,
+      config: {
+        url: error.config?.url,
+        method: error.config?.method,
+        timeout: error.config?.timeout,
+      },
+      response: {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        headers: error.response?.headers,
+      },
+      stack: error.stack
+    };
+    
+    console.error(`Error in fetchAnomalyDataByMode (${mode}):`, errorInfo);
+    
+    // Re-throw with enhanced error information
+    const enhancedError = new Error(
+      `Failed to fetch ${mode} data: ${error.message}`
+    );
+    enhancedError.originalError = error;
+    enhancedError.details = errorInfo;
+    throw enhancedError;
   }
 };
 
@@ -74,15 +114,50 @@ const fetchAnomalyDataByMode = async (mode = 'baseline') => {
  */
 export const fetchAnomalyData = async ({ preferLLM = true } = {}) => {
   try {
-    // Try LLM endpoint if preferred and available
-    if (preferLLM && (await checkLLMAvailability())) {
-      return await fetchAnomalyDataByMode('llm');
+    console.log('Starting fetchAnomalyData, preferLLM:', preferLLM);
+    
+    // Check if LLM is available if preferred
+    if (preferLLM) {
+      try {
+        const isLLMAvailable = await checkLLMAvailability();
+        console.log('LLM available:', isLLMAvailable);
+        if (isLLMAvailable) {
+          console.log('Fetching data with LLM mode');
+          const data = await fetchAnomalyDataByMode('llm');
+          return { success: true, data };
+        }
+      } catch (llmError) {
+        console.warn('Error checking LLM availability, falling back to baseline:', llmError);
+      }
     }
+    
     // Fall back to baseline
-    return await fetchAnomalyDataByMode('baseline');
+    console.log('Fetching data with baseline mode');
+    const data = await fetchAnomalyDataByMode('baseline');
+    return { 
+      success: true, 
+      data,
+      source: 'baseline',
+      timestamp: new Date().toISOString()
+    };
+    
   } catch (error) {
-    console.error('Error in fetchAnomalyData:', error);
-    throw error;
+    const errorDetails = {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      stack: error.stack
+    };
+    
+    console.error('Error in fetchAnomalyData:', errorDetails);
+    
+    return { 
+      success: false, 
+      error: error.message || 'Failed to fetch data',
+      errorDetails,
+      data: [] 
+    };
   }
 };
 
